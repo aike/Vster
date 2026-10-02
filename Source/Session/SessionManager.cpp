@@ -190,8 +190,10 @@ void SessionManager::attemptLoad (std::shared_ptr<SlotJob> job,
             {
                 markMissing (*job);
             }
-            else if (job->editorOpen)
+            else if (job->index == 0)
             {
+                // On session restore only the instrument's UI opens
+                // automatically; FX editors stay closed.
                 if (auto* loaded = engine.chain.getInstance (job->index))
                     windows.showEditorFor (job->index, *loaded, job->editorPos);
             }

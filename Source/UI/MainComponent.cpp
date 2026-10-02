@@ -105,6 +105,8 @@ void MainComponent::loadPluginIntoSlot (int slot, const juce::PluginDescription&
             if (loadError.isNotEmpty())
                 juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
                                                         "Plugin load failed", loadError);
+            else if (auto* loaded = engine.chain.getInstance (slot))
+                windows.showEditorFor (slot, *loaded, windows.getPosition (slot));
 
             slotComponents[(size_t) slot]->refresh();
         });

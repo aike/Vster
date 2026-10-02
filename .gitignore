@@ -2,10 +2,17 @@
 build/
 out/
 
-# Steinberg ASIO SDK — license forbids redistribution. Never commit.
+# --- Non-redistributable SDKs -------------------------------------------------
+# The Steinberg ASIO SDK license forbids redistributing the SDK itself.
+# Never commit it, wherever it gets copied in this tree.
 sdk/
+[Aa][Ss][Ii][Oo][Ss][Dd][Kk]*/
+**/[Aa][Ss][Ii][Oo][Ss][Dd][Kk]*/
+asio_sdk*/
+# The same applies to the Steinberg VST2 SDK (not used by Vster, but just in case)
+**/[Vv][Ss][Tt]2_[Ss][Dd][Kk]/
 
-# IDE
+# IDE / local config
 .vs/
 *.user
 CMakeSettings.json

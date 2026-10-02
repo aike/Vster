@@ -1,25 +1,28 @@
 # Vster
 
-VST3プラグインをスタンドアロンアプリのように起動するための小さなホストアプリ(Windows x64)。
-DAWを立ち上げずに、VSTインストゥルメントをすぐ鳴らすことが目的です。
+A minimal host that launches VST3 plugins like standalone applications (Windows x64).
+Play a software instrument instantly, without starting a DAW.
 
-## 機能
+## Features
 
-- VST Instrument ×1 + インサートVST Effect ×3 の固定直列チェーン(Inst → FX1 → FX2 → FX3 → Master)
-- ASIO / WASAPI 出力
-- ホストBPM設定 — テンポ同期するプラグイン(ディレイ、LFO、アルペジエータ等)はこのBPMに追従します。Play/Stopトグル付き(Playで小節頭から再スタート)
-- ソフトキーボード + ハードウェアMIDIキーボード入力
-- セッションSave/Load(.vster) — スロット構成・各プラグインのパラメータ状態・BPM・マスター音量を保存
-- マスターボリューム / MUTE / ピークメーター
-- クラッシュ対策の自動保存(2分毎 + プラグインロード前)と起動時リカバリ
-- スキャン中にクラッシュしたプラグインの自動ブラックリスト
+- Fixed serial chain: **1 VST3 instrument + 3 insert VST3 effects** (Inst → FX1 → FX2 → FX3 → Master)
+- **ASIO** and WASAPI output
+- **Host BPM** — tempo-synced plugins (delays, LFOs, arpeggiators, ...) follow the host
+  play head, with a Play/Stop toggle (Play restarts from bar 1)
+- On-screen keyboard plus **hardware MIDI input**
+- **Session save/load** (`.vster`): slot configuration, full plugin states, BPM, master volume.
+  If a plugin is missing on load, its saved state is preserved and written back on the next save;
+  reloading the same plugin restores it automatically
+- Master volume / MUTE (click-free ramp) and a stereo peak meter
+- Crash insurance: autosave every 2 minutes and before each plugin load, with recovery on restart
+- Plugin scanning with an automatic crash blacklist (dead-man's-pedal)
 
-シーケンサーはありません。トラックは1本だけです。MIDIはInstrumentスロットにのみ送られます
-(FXスロットのボコーダ・アルペジエータ系プラグインは音が出ません)。
+No sequencer, a single track only. MIDI is routed to the instrument slot only
+(vocoder/arpeggiator-style *effect* plugins will stay silent).
 
-## ビルド方法
+## Building
 
-必要なもの: Visual Studio 2022(C++ワークロード)、CMake 3.22+、git
+Requirements: Visual Studio 2022 (C++ workload), CMake 3.22+, git.
 
 ```
 git clone <this repo>
@@ -27,42 +30,63 @@ cd vster
 git submodule update --init    # external/JUCE
 ```
 
-### ASIO SDK(任意、ただし推奨)
+### ASIO SDK (optional, recommended)
 
-SteinbergのライセンスによりASIO SDKは**このリポジトリに同梱できません**。各自で取得してください:
+Steinberg's license **forbids redistributing the ASIO SDK**, so it is not part of this
+repository and must never be committed to it. To build with ASIO support:
 
-1. https://www.steinberg.net/developers/ から ASIO SDK をダウンロード(無償、ライセンス同意が必要)
-2. `sdk/asiosdk/common/iasiodrv.h` が存在するように展開する
-   (別の場所に置く場合は `-DASIOSDK_DIR=<path>` を指定)
+1. Download the ASIO SDK from https://www.steinberg.net/developers/
+   (free, license agreement required)
+2. Unzip it so that `sdk/asiosdk/common/iasiodrv.h` exists,
+   or keep it anywhere else and pass `-DASIOSDK_DIR=<path>`
 
-SDKが見つからない場合は警告が出て、WASAPIのみでビルドされます(`-DVSTER_ENABLE_ASIO=OFF` で明示的に無効化も可能)。
+Only the SDK headers are used. If the SDK is not found, CMake prints a warning and
+builds a WASAPI-only binary (you can also disable ASIO explicitly with
+`-DVSTER_ENABLE_ASIO=OFF`).
 
-### ビルド
+### Build
 
 ```
-cmake -B build -G "Visual Studio 17 2022" -A x64
+cmake -B build -G "Visual Studio 17 2022" -A x64 [-DASIOSDK_DIR=<path>]
 cmake --build build --config Release
 ```
 
-実行ファイル: `build/Vster_artefacts/Release/Vster.exe`
+Binary: `build/Vster_artefacts/Release/Vster.exe`
 
-## 既知の制限・注意点
+## Known limitations
 
-- **64bit VST3のみ**対応。32bitプラグインとVST2(.dll)はロードできません。
-- プラグインはアプリと同一プロセスで動くため、**プラグインがクラッシュするとVsterごと落ちます**。
-  自動保存からのリカバリで被害を最小化しています。スキャン中のクラッシュは次回起動時に自動でブラックリストされます。
-- プラグインディレイ補償(PDC)はありません。ルックアヘッド系プラグインのレイテンシは
-  そのまま加算されます(合計値を上部ステータスに表示)。
-- ASIOドライバは排他的なことが多く、DAW等が使用中だとデバイスを開けない場合があります。
-- 一部のVST3エディタはHiDPI環境で表示が乱れることがあります。
+- **64-bit VST3 only.** 32-bit plugins and VST2 (`.dll`) cannot be loaded.
+- Plugins run in-process: **a crashing plugin takes Vster down with it.**
+  Autosave/recovery limits the damage; a plugin that crashes a scan is blacklisted
+  automatically on the next run.
+- No plugin delay compensation. Latency from look-ahead plugins simply adds up
+  (the total is shown in the status readout).
+- ASIO drivers are usually exclusive — the device may fail to open while a DAW is using it.
+- Some VST3 editors misbehave on HiDPI setups.
 
-## ライセンス
+## License
 
-Vster本体は **GNU AGPLv3** で公開されています(`LICENSE` 参照)。
+Vster is free software, released under the **GNU Affero General Public License v3.0**
+(see [LICENSE](LICENSE)). AGPLv3 was chosen because it is the license under which the
+dependencies may be used at no cost, and the combination stays compliant:
 
-- [JUCE](https://juce.com) — AGPLv3(`external/JUCE` サブモジュール)
-- VST3ホスティングはJUCEに同梱のVST3インターフェースヘッダ(GPLv3)を使用
-- ASIO SDKは再配布禁止のため含まれていません(ビルド時に各自取得)
+- **JUCE** (git submodule at `external/JUCE`) is used under its **AGPLv3** option.
+  Vster as a whole is therefore distributed under AGPLv3.
+- **VST3 hosting** uses the VST3 interface headers bundled with JUCE, which Steinberg
+  makes available under **GPLv3**. GPLv3 code may be combined with AGPLv3 code
+  (see GPLv3 §13 / AGPLv3 §13); the combined work is distributed under AGPLv3.
+  The separate proprietary Steinberg VST 3 SDK license is **not** used.
+- The **ASIO SDK** is **not included** in this repository and is never redistributed
+  in source form (its license forbids that). Users who want ASIO support download it
+  from Steinberg themselves and accept Steinberg's license. Distributing *compiled*
+  binaries built against it is permitted by the ASIO SDK licensing terms with the
+  trademark attribution below.
 
-VST is a trademark of Steinberg Media Technologies GmbH, registered in Europe and other countries.
+If you distribute modified versions, the AGPLv3 requires you to provide the complete
+corresponding source code.
+
+### Trademark notices
+
+VST is a trademark of Steinberg Media Technologies GmbH, registered in Europe and
+other countries.
 ASIO is a trademark and software of Steinberg Media Technologies GmbH.

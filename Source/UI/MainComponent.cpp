@@ -42,7 +42,7 @@ MainComponent::MainComponent (AudioEngine& e, PluginHostManager& p, PluginWindow
 
     session.onSessionChanged = [this] { syncControls(); };
 
-    setSize (860, 560);
+    setSize (860, 258);   // 40 transport + 128 slots/master + 90 keyboard
 }
 
 MainComponent::~MainComponent()
@@ -59,17 +59,20 @@ void MainComponent::resized()
     keyboard.setKeyWidth (juce::jmax (12.0f, (float) keyboard.getWidth() / 50.0f));
 
     auto master = area.removeFromRight (130).reduced (6);
-    volumeLabel.setBounds (master.removeFromTop (18));
-    muteButton.setBounds (master.removeFromBottom (32));
-    master.removeFromBottom (6);
+    volumeLabel.setBounds (master.removeFromTop (16));
+    muteButton.setBounds (master.removeFromBottom (26));
+    master.removeFromBottom (4);
     meter.setBounds (master.removeFromRight (36));
     master.removeFromRight (6);
     volumeSlider.setBounds (master);
 
+    // Fixed one-text-line slot rows; extra vertical space stays empty.
     auto slotsArea = area.reduced (6);
-    const int slotHeight = slotsArea.getHeight() / PluginChain::numSlots;
     for (auto& slot : slotComponents)
-        slot->setBounds (slotsArea.removeFromTop (slotHeight).reduced (0, 4));
+    {
+        slot->setBounds (slotsArea.removeFromTop (26));
+        slotsArea.removeFromTop (4);
+    }
 }
 
 void MainComponent::loadPluginIntoSlot (int slot, const juce::PluginDescription& desc)

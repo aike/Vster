@@ -5,7 +5,8 @@
 #include "../Plugins/PluginWindowManager.h"
 
 // One chain slot: role label, plugin-name button (click = load/remove menu)
-// and a button to open the plugin's editor.
+// and a button to open the plugin's editor. Plugins come from the known-plugin
+// list (populated by "Scan Plugins"), listed by manufacturer or by category.
 class SlotComponent : public juce::Component
 {
 public:
@@ -20,8 +21,6 @@ public:
 
 private:
     void showMenu();
-    void browseForPlugin();
-    void chooseFromFound (juce::Array<juce::PluginDescription> found);
 
     bool isInstrumentSlot() const { return slot == 0; }
 
@@ -33,5 +32,4 @@ private:
     juce::Label roleLabel;
     juce::TextButton nameButton;
     juce::TextButton uiButton { "UI" };
-    std::unique_ptr<juce::FileChooser> chooser;
 };

@@ -1,0 +1,12 @@
+# Build output
+build/
+out/
+
+# Steinberg ASIO SDK — license forbids redistribution. Never commit.
+sdk/
+
+# IDE
+.vs/
+*.user
+CMakeSettings.json
+CMakeUserPresets.json

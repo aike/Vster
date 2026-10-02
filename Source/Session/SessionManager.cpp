@@ -81,12 +81,12 @@ void SessionManager::loadFromFile (const juce::File& file,
     auto xml = juce::parseXML (file);
     if (xml == nullptr || ! xml->hasTagName ("VsterSession"))
     {
-        if (onFinished) onFinished ("Not a valid Vster session file.");
+        if (onFinished) onFinished ("Not a valid VSTer session file.");
         return;
     }
     if (xml->getIntAttribute ("formatVersion", 1) > sessionFormatVersion)
     {
-        if (onFinished) onFinished ("This session was saved by a newer version of Vster.");
+        if (onFinished) onFinished ("This session was saved by a newer version of VSTer.");
         return;
     }
 

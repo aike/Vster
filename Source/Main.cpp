@@ -8,7 +8,7 @@
 class VsterApplication : public juce::JUCEApplication
 {
 public:
-    const juce::String getApplicationName() override    { return "Vster"; }
+    const juce::String getApplicationName() override    { return "VSTer"; }
     const juce::String getApplicationVersion() override { return JUCE_APPLICATION_VERSION_STRING; }
     bool moreThanOneInstanceAllowed() override          { return false; }
 
@@ -31,7 +31,7 @@ public:
         engine->initialise (savedDeviceState.get());
 
         mainWindow = std::make_unique<MainWindow> (
-            "Vster", new MainComponent (*engine, *pluginManager, *windowManager, *session));
+            "VSTer", new MainComponent (*engine, *pluginManager, *windowManager, *session));
 
         session->offerAutosaveRecovery();
     }

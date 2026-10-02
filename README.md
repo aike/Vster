@@ -1,4 +1,4 @@
-# VSTer
+# Vster
 
 A minimal host that launches VST3 plugins like standalone applications (Windows x64).
 Play a software instrument instantly, without starting a DAW.
@@ -51,12 +51,12 @@ cmake -B build -G "Visual Studio 17 2022" -A x64 [-DASIOSDK_DIR=<path>]
 cmake --build build --config Release
 ```
 
-Binary: `build/Vster_artefacts/Release/VSTer.exe`
+Binary: `build/Vster_artefacts/Release/Vster.exe`
 
 ## Known limitations
 
 - **64-bit VST3 only.** 32-bit plugins and VST2 (`.dll`) cannot be loaded.
-- Plugins run in-process: **a crashing plugin takes VSTer down with it.**
+- Plugins run in-process: **a crashing plugin takes Vster down with it.**
   Autosave/recovery limits the damage; a plugin that crashes a scan is blacklisted
   automatically on the next run.
 - No plugin delay compensation. Latency from look-ahead plugins simply adds up
@@ -66,12 +66,12 @@ Binary: `build/Vster_artefacts/Release/VSTer.exe`
 
 ## License
 
-VSTer is free software, released under the **GNU Affero General Public License v3.0**
+Vster is free software, released under the **GNU Affero General Public License v3.0**
 (see [LICENSE](LICENSE)). AGPLv3 was chosen because it is the license under which the
 dependencies may be used at no cost, and the combination stays compliant:
 
 - **JUCE** (git submodule at `external/JUCE`) is used under its **AGPLv3** option.
-  VSTer as a whole is therefore distributed under AGPLv3.
+  Vster as a whole is therefore distributed under AGPLv3.
 - **VST3 hosting** uses the VST3 interface headers bundled with JUCE, which Steinberg
   makes available under **GPLv3**. GPLv3 code may be combined with AGPLv3 code
   (see GPLv3 §13 / AGPLv3 §13); the combined work is distributed under AGPLv3.

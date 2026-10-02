@@ -27,7 +27,7 @@ if(VSTER_ENABLE_ASIO)
 endif()
 
 juce_add_gui_app(Vster
-    PRODUCT_NAME "VSTer"
+    PRODUCT_NAME "Vster"
     COMPANY_NAME "keisuke"
     VERSION ${PROJECT_VERSION})
 

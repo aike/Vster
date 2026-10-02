@@ -90,7 +90,7 @@ void TransportBar::timerCallback()
     else
     {
         statusLabel.setColour (juce::Label::textColourId, juce::Colours::orangered);
-        statusLabel.setText ("No audio device — open Audio Settings", juce::dontSendNotification);
+        statusLabel.setText ("No audio device - open Audio Settings", juce::dontSendNotification);
     }
 }
 

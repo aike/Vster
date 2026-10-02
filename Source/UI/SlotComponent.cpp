@@ -108,10 +108,10 @@ void SlotComponent::browseForPlugin()
                     "No plugin found",
                     isInstrumentSlot()
                         ? "No VST3 instrument was found in that file.\n\n"
-                          "Note: Vster loads 64-bit VST3 plugins only — 32-bit plugins and VST2 (.dll) are not supported, "
+                          "Note: Vster loads 64-bit VST3 plugins only - 32-bit plugins and VST2 (.dll) are not supported, "
                           "and effect plugins cannot go into the instrument slot."
                         : "No VST3 effect was found in that file.\n\n"
-                          "Note: Vster loads 64-bit VST3 plugins only — 32-bit plugins and VST2 (.dll) are not supported, "
+                          "Note: Vster loads 64-bit VST3 plugins only - 32-bit plugins and VST2 (.dll) are not supported, "
                           "and instruments cannot go into an FX slot.");
                 return;
             }

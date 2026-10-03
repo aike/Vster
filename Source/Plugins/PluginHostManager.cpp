@@ -1,4 +1,111 @@
 #include "PluginHostManager.h"
+#include <cstdlib>
+
+#if JUCE_WINDOWS
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
+ #include <windows.h>
+#endif
+
+namespace
+{
+    const char* const scanWorkerFlag = "--vster-scan";
+    constexpr int scanTimeoutMs = 60000;   // a plugin that takes longer is treated as hung
+}
+
+//==============================================================================
+// Runs in the main process: probes each plugin file in a child process.
+class PluginHostManager::OutOfProcessScanner : public juce::KnownPluginList::CustomScanner
+{
+public:
+    bool findPluginTypesFor (juce::AudioPluginFormat& format,
+                             juce::OwnedArray<juce::PluginDescription>& result,
+                             const juce::String& fileOrIdentifier) override
+    {
+        const auto resultFile = juce::File::createTempFile (".xml");
+        const juce::ScopeGuard deleteResult { [&] { resultFile.deleteFile(); } };
+
+        juce::ChildProcess child;
+        const juce::StringArray args { juce::File::getSpecialLocation (juce::File::currentExecutableFile).getFullPathName(),
+                                       scanWorkerFlag, fileOrIdentifier, resultFile.getFullPathName() };
+
+        if (! child.start (args, 0))
+        {
+            // Can't spawn the worker: fall back to scanning in-process.
+            format.findAllTypesForFile (result, fileOrIdentifier);
+            return true;
+        }
+
+        const auto startTime = juce::Time::getMillisecondCounter();
+
+        while (! child.waitForProcessToFinish (100))
+        {
+            if (juce::Thread::currentThreadShouldExit())
+            {
+                child.kill();
+                return true;   // cancelled: not the plugin's fault, don't blacklist
+            }
+
+            if (juce::Time::getMillisecondCounter() - startTime > (juce::uint32) scanTimeoutMs)
+            {
+                child.kill();
+                DBG ("Scan timed out: " << fileOrIdentifier);
+                return false;  // hung: blacklist
+            }
+        }
+
+        const auto xml = child.getExitCode() == 0 ? juce::parseXML (resultFile) : nullptr;
+
+        if (xml == nullptr || ! xml->hasTagName ("VSTERSCAN"))
+        {
+            DBG ("Scan failed (exit code " << (int) child.getExitCode() << "): " << fileOrIdentifier);
+            return false;      // crashed or failed: blacklist
+        }
+
+        for (auto* e : xml->getChildIterator())
+        {
+            auto desc = std::make_unique<juce::PluginDescription>();
+
+            if (desc->loadFromXml (*e))
+                result.add (desc.release());
+        }
+
+        return true;
+    }
+};
+
+bool PluginHostManager::isScanWorkerCommandLine (const juce::StringArray& args)
+{
+    return args.size() >= 3 && args[0] == scanWorkerFlag;
+}
+
+// Runs in the child process. Never returns: exits immediately after writing
+// the result, so a plugin misbehaving during process teardown can't turn a
+// successful scan into a failure.
+void PluginHostManager::runScanWorker (const juce::StringArray& args)
+{
+   #if JUCE_WINDOWS
+    // No "Vster has stopped working" dialogs: a crash here just ends the child.
+    SetErrorMode (SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+    _set_abort_behavior (0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+   #endif
+
+    const auto pluginPath = args[1];
+    const juce::File resultFile (args[2]);
+
+    juce::VST3PluginFormat format;
+    juce::OwnedArray<juce::PluginDescription> found;
+    format.findAllTypesForFile (found, pluginPath);
+
+    juce::XmlElement root ("VSTERSCAN");
+
+    for (auto* d : found)
+        root.addChildElement (d->createXml().release());
+
+    const bool written = root.writeTo (resultFile);
+    std::_Exit (written ? 0 : 1);
+}
 
 //==============================================================================
 class PluginHostManager::Scanner : public juce::Thread
@@ -118,6 +225,7 @@ PluginHostManager::PluginHostManager (juce::PropertiesFile& s) : settings (s)
 {
     vst3 = new juce::VST3PluginFormat();
     formatManager.addFormat (vst3);   // manager takes ownership
+    knownPlugins.setCustomScanner (std::make_unique<OutOfProcessScanner>());
 
     if (auto xml = settings.getXmlValue ("knownPlugins"))
         knownPlugins.recreateFromXml (*xml);

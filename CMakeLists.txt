@@ -1,10 +1,24 @@
 cmake_minimum_required(VERSION 3.22)
-project(Vster VERSION 0.1.0 LANGUAGES C CXX)
+project(Vster VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_subdirectory(external/JUCE)
+# Link the MSVC runtime statically so Vster.exe runs without the
+# Visual C++ Redistributable installed.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
+# --- JUCE ---
+# Defaults to the git submodule (external/JUCE). Pass -DJUCE_DIR=<path> to use
+# a JUCE checkout elsewhere (the folder that contains JUCE's CMakeLists.txt).
+set(JUCE_DIR "${CMAKE_SOURCE_DIR}/external/JUCE" CACHE PATH "Path to the JUCE source tree")
+if(NOT EXISTS "${JUCE_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR
+        "JUCE not found (expected ${JUCE_DIR}/CMakeLists.txt). "
+        "Run 'git submodule update --init' to fetch external/JUCE, "
+        "or pass -DJUCE_DIR=<path to your JUCE folder>.")
+endif()
+add_subdirectory("${JUCE_DIR}" "${CMAKE_BINARY_DIR}/JUCE")
 
 # --- ASIO SDK (user-supplied; Steinberg's license forbids redistribution) ---
 # Download from https://www.steinberg.net/developers/ and unzip so that

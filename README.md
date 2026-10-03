@@ -20,38 +20,179 @@ Play a software instrument instantly, without starting a DAW.
 No sequencer, a single track only. MIDI is routed to the instrument slot only
 (vocoder/arpeggiator-style *effect* plugins will stay silent).
 
+<img src="ss.png" width="600">
+
+## Download
+
+Prebuilt binaries for Windows x64 (with ASIO support) are available on the
+[Releases page](https://github.com/aike/Vster/releases). No installation is needed.
+
+1. Open https://github.com/aike/Vster/releases and pick the latest release
+   (releases marked *Pre-release* are test builds).
+2. Under **Assets**, download `Vster-<version>-win64.zip`
+   (not the "Source code" archives).
+3. Unzip it to any folder, e.g. `C:\Tools\Vster\`.
+4. Run `Vster.exe`.
+   - If Windows SmartScreen shows "Windows protected your PC", click
+     **More info** → **Run anyway** (the binary is not code-signed).
+5. Click **Scan Plugins** to find the VST3 plugins installed in the standard folder
+   (`C:\Program Files\Common Files\VST3`). Plugins that crash or hang while
+   being scanned are skipped automatically.
+6. Choose your audio device (ASIO or WASAPI) with **Audio Settings...**.
+
+To update, download the new zip and replace `Vster.exe`. Settings and the plugin
+list are stored separately in `%APPDATA%\Vster`, so they are kept.
+
+Requirements: Windows 10/11 64-bit, 64-bit VST3 plugins.
+
 ## Building
 
-Requirements: Visual Studio 2022 (C++ workload), CMake 3.22+, git.
+Requirements: Visual Studio 2022 (with the "Desktop development with C++" workload),
+CMake 3.22+, git. Run the commands below from a *Developer PowerShell for VS 2022*
+(or any shell where `cmake` and `git` are on the PATH).
+
+### 1. JUCE
+
+Vster needs the JUCE source tree. CMake looks for it via `JUCE_DIR`
+(default: `external/JUCE`, the git submodule). Either:
+
+**a) Use the submodule (default)**
 
 ```
-git clone <this repo>
-cd vster
-git submodule update --init    # external/JUCE
+git clone --recursive https://github.com/aike/Vster.git
+cd Vster
 ```
 
-### ASIO SDK (optional, recommended)
+If you already cloned without `--recursive`, fetch JUCE afterwards:
+
+```
+git submodule update --init
+```
+
+Check: `external/JUCE/CMakeLists.txt` must exist.
+
+**b) Use a JUCE checkout elsewhere**
+
+```
+git clone https://github.com/juce-framework/JUCE.git D:/lib/JUCE
+```
+
+and pass `-DJUCE_DIR=D:/lib/JUCE` when configuring (step 3).
+`JUCE_DIR` must be the folder that directly contains JUCE's `CMakeLists.txt`
+(i.e. `D:/lib/JUCE/CMakeLists.txt` exists).
+
+### 2. ASIO SDK (optional, recommended)
 
 Steinberg's license **forbids redistributing the ASIO SDK**, so it is not part of this
 repository and must never be committed to it. To build with ASIO support:
 
 1. Download the ASIO SDK from https://www.steinberg.net/developers/
    (free, license agreement required)
-2. Unzip it so that `sdk/asiosdk/common/iasiodrv.h` exists,
-   or keep it anywhere else and pass `-DASIOSDK_DIR=<path>`
+2. Unzip it. The zip contains a versioned top-level folder
+   (e.g. `asiosdk_2.3.3_2019-06-14`); rename/move it so that you get:
+
+   ```
+   D:/lib/ASIOSDK/
+       asio/
+       common/
+           iasiodrv.h      <- this file must exist
+       driver/
+       host/
+       ...
+   ```
+
+3. Pass `-DASIOSDK_DIR=D:/lib/ASIOSDK` when configuring (step 3).
+   `ASIOSDK_DIR` is the folder that contains `common/`, **not** `common/` itself.
+
+   Alternatively, put the SDK at `sdk/asiosdk/` inside this repository
+   (`sdk/asiosdk/common/iasiodrv.h`); then `ASIOSDK_DIR` can be omitted.
+   `sdk/` is git-ignored.
 
 Only the SDK headers are used. If the SDK is not found, CMake prints a warning and
 builds a WASAPI-only binary (you can also disable ASIO explicitly with
 `-DVSTER_ENABLE_ASIO=OFF`).
+When ASIO is enabled, the configure output shows
+`-- ASIO SDK found at D:/lib/ASIOSDK — ASIO enabled`.
 
-### Build
+### 3. Configure and build
+
+Example with JUCE as submodule and the ASIO SDK in `D:/lib/ASIOSDK`:
 
 ```
-cmake -B build -G "Visual Studio 17 2022" -A x64 [-DASIOSDK_DIR=<path>]
+cmake -B build -G "Visual Studio 17 2022" -A x64 -DASIOSDK_DIR=D:/lib/ASIOSDK
 cmake --build build --config Release
 ```
 
+Example with both libraries outside the repository:
+
+```
+cmake -B build -G "Visual Studio 17 2022" -A x64 -DJUCE_DIR=D:/lib/JUCE -DASIOSDK_DIR=D:/lib/ASIOSDK
+cmake --build build --config Release
+```
+
+WASAPI only (no ASIO SDK):
+
+```
+cmake -B build -G "Visual Studio 17 2022" -A x64 -DVSTER_ENABLE_ASIO=OFF
+cmake --build build --config Release
+```
+
+Notes:
+
+- Use forward slashes (`D:/lib/JUCE`) or quote the path (`"-DJUCE_DIR=D:\lib\JUCE"`).
+  Paths containing spaces must be quoted.
+- The paths are cached in `build/CMakeCache.txt`. If you change them, or a previous
+  configure failed, delete the `build` folder and configure again.
+- You can also open `build/Vster.sln` in Visual Studio and build from there.
+
 Binary: `build/Vster_artefacts/Release/Vster.exe`
+
+## For committers
+
+### Release procedure
+
+Releases are built and published by GitHub Actions
+([.github/workflows/release.yml](.github/workflows/release.yml)) when a version tag
+`v*` is pushed. The workflow builds `Vster.exe` with ASIO support (the ASIO SDK is
+downloaded from Steinberg during the build, never committed), and attaches
+`Vster-<tag>-win64.zip` (`Vster.exe`, `LICENSE`, `README.md`) to a new GitHub Release
+with auto-generated release notes.
+
+1. Bump the version in `CMakeLists.txt` (the tag must match it, or the workflow fails):
+
+   ```cmake
+   project(Vster VERSION 0.2.0 LANGUAGES C CXX)
+   ```
+
+2. Commit and push to `main`:
+
+   ```
+   git add CMakeLists.txt
+   git commit -m "Release 0.2.0"
+   git push origin main
+   ```
+
+3. Tag the commit and push the tag:
+
+   ```
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+   A tag with a suffix such as `v0.2.0-rc1` is published as a **pre-release**.
+
+4. Watch the run in the repository's **Actions** tab. When it finishes, the release
+   appears under **Releases**. Edit the generated notes there if needed.
+
+If the workflow fails, fix the problem, then delete and re-push the tag:
+
+```
+git tag -d v0.2.0
+git push origin :refs/tags/v0.2.0
+# (also delete the GitHub Release if one was created)
+git tag v0.2.0
+git push origin v0.2.0
+```
 
 ## Known limitations
 

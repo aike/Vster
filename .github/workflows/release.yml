@@ -1,0 +1,74 @@
+# Builds Vster and publishes a GitHub Release when a version tag (v*) is pushed.
+# The tag must match the version in CMakeLists.txt: project(Vster VERSION x.y.z)
+#   v1.2.0        -> release
+#   v1.2.0-rc1    -> pre-release
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  # The ASIO SDK may not be redistributed in source form, so it is downloaded from
+  # Steinberg at build time. Distributing the compiled binary is permitted.
+  ASIOSDK_URL: https://www.steinberg.net/asiosdk
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Check tag matches CMakeLists.txt version
+        run: |
+          $m = Select-String -Path CMakeLists.txt -Pattern 'project\(Vster VERSION ([0-9]+\.[0-9]+\.[0-9]+)'
+          if (-not $m) { throw "Version not found in CMakeLists.txt" }
+          $ver = $m.Matches[0].Groups[1].Value
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch "^v$([regex]::Escape($ver))(-.+)?$") {
+            throw "Tag '$tag' does not match CMakeLists.txt version '$ver' (expected v$ver or v$ver-<suffix>)"
+          }
+          "PRERELEASE=$(if ($tag.Contains('-')) { 'true' } else { 'false' })" >> $env:GITHUB_ENV
+
+      - name: Download ASIO SDK
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'asiosdk.zip'
+          $dst = Join-Path $env:RUNNER_TEMP 'asiosdk'
+          Invoke-WebRequest -Uri $env:ASIOSDK_URL -OutFile $zip
+          Expand-Archive $zip -DestinationPath $dst
+          $h = Get-ChildItem $dst -Recurse -Filter iasiodrv.h | Where-Object { $_.Directory.Name -eq 'common' } | Select-Object -First 1
+          if (-not $h) { throw "iasiodrv.h not found in the downloaded ASIO SDK" }
+          $dir = $h.Directory.Parent.FullName -replace '\\', '/'
+          "ASIOSDK_DIR=$dir" >> $env:GITHUB_ENV
+
+      - name: Configure
+        run: cmake -B build -A x64 "-DASIOSDK_DIR=$env:ASIOSDK_DIR" -DVSTER_ENABLE_ASIO=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Package
+        run: |
+          $name = "Vster-${{ github.ref_name }}-win64"
+          $stage = Join-Path $env:RUNNER_TEMP $name
+          New-Item -ItemType Directory $stage | Out-Null
+          Copy-Item build/Vster_artefacts/Release/Vster.exe, LICENSE, README.md $stage
+          Compress-Archive -Path "$stage/*" -DestinationPath "$name.zip"
+          "ASSET=$name.zip" >> $env:GITHUB_ENV
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $flags = @('--generate-notes', '--title', "Vster ${{ github.ref_name }}")
+          if ($env:PRERELEASE -eq 'true') { $flags += '--prerelease' }
+          gh release create "${{ github.ref_name }}" $env:ASSET @flags

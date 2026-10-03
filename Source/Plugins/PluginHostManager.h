@@ -29,9 +29,16 @@ public:
 
     void saveKnownPlugins();
 
+    // Plugins are probed in a child process (this exe started with
+    // --vster-scan <plugin> <result.xml>), so a plugin that crashes or hangs
+    // while being scanned is blacklisted instead of taking Vster down.
+    static bool isScanWorkerCommandLine (const juce::StringArray& args);
+    [[noreturn]] static void runScanWorker (const juce::StringArray& args);
+
 private:
     class Scanner;
     class ScanWindow;
+    class OutOfProcessScanner;
 
     juce::File getDeadMansPedalFile() const;
 

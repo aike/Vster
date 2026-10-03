@@ -10,10 +10,17 @@ class VsterApplication : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override    { return "Vster"; }
     const juce::String getApplicationVersion() override { return JUCE_APPLICATION_VERSION_STRING; }
-    bool moreThanOneInstanceAllowed() override          { return false; }
+    bool moreThanOneInstanceAllowed() override
+    {
+        // Scan workers run alongside the main instance.
+        return PluginHostManager::isScanWorkerCommandLine (getCommandLineParameterArray());
+    }
 
     void initialise (const juce::String&) override
     {
+        if (const auto args = getCommandLineParameterArray(); PluginHostManager::isScanWorkerCommandLine (args))
+            PluginHostManager::runScanWorker (args);   // never returns
+
         juce::PropertiesFile::Options options;
         options.applicationName = "Vster";
         options.filenameSuffix = ".settings";

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(Vster VERSION 0.2.0 LANGUAGES C CXX)
+project(Vster VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,6 +43,7 @@ endif()
 juce_add_gui_app(Vster
     PRODUCT_NAME "Vster"
     COMPANY_NAME "keisuke"
+    ICON_BIG "${CMAKE_SOURCE_DIR}/Assets/icon.png"
     VERSION ${PROJECT_VERSION})
 
 juce_generate_juce_header(Vster)
@@ -56,6 +57,7 @@ target_sources(Vster PRIVATE
     Source/Plugins/PluginWindowManager.cpp
     Source/Session/SessionManager.cpp
     Source/UI/MainComponent.cpp
+    Source/UI/PluginManagerWindow.cpp
     Source/UI/TransportBar.cpp
     Source/UI/SlotComponent.cpp
     Source/UI/LevelMeterComponent.cpp)

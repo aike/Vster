@@ -6,7 +6,6 @@ SessionManager::SessionManager (AudioEngine& e, PluginHostManager& p, PluginWind
     : engine (e), plugins (p), windows (w)
 {
     lastSessionDirectory = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
-    startTimer (2 * 60 * 1000);   // autosave every 2 minutes
 }
 
 SessionManager::~SessionManager() = default;
@@ -89,6 +88,10 @@ void SessionManager::loadFromFile (const juce::File& file,
         if (onFinished) onFinished ("This session was saved by a newer version of Vster.");
         return;
     }
+
+    // From here on the load really happens, so plain Save targets this file.
+    // Autosave recovery resets this afterwards (see offerAutosaveRecovery).
+    currentSessionFile = file;
 
     if (auto* t = xml->getChildByName ("Transport"))
     {
@@ -244,11 +247,56 @@ void SessionManager::finishOne()
 }
 
 //==============================================================================
+void SessionManager::newInteractive()
+{
+    if (isLoading())
+        return;
+
+    juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon,
+        "New session",
+        "Discard the current session and start a new one?",
+        "New", "Cancel", nullptr,
+        juce::ModalCallbackFunction::create ([this] (int result)
+        {
+            if (result != 1)
+                return;
+
+            windows.closeAll();
+            for (int i = 0; i < PluginChain::numSlots; ++i)
+                engine.clearSlot (i);
+
+            currentSessionFile = juce::File();
+            engine.setBpm (120.0);
+            engine.setPlaying (false);
+            engine.setMasterGainDb (0.0f);
+            engine.setMuted (false);
+
+            if (onSessionChanged)
+                onSessionChanged();
+        }));
+}
+
 void SessionManager::saveInteractive()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Save session",
-                                                   lastSessionDirectory.getChildFile ("session.vster"),
-                                                   "*.vster");
+    if (currentSessionFile == juce::File())
+    {
+        saveAsInteractive();
+        return;
+    }
+
+    const auto result = saveToFile (currentSessionFile);
+    if (result.failed())
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                "Save failed", result.getErrorMessage());
+}
+
+void SessionManager::saveAsInteractive()
+{
+    const auto suggested = currentSessionFile != juce::File()
+                               ? currentSessionFile
+                               : lastSessionDirectory.getChildFile ("session.vster");
+
+    chooser = std::make_unique<juce::FileChooser> ("Save session", suggested, "*.vster");
     chooser->launchAsync (juce::FileBrowserComponent::saveMode
                           | juce::FileBrowserComponent::canSelectFiles
                           | juce::FileBrowserComponent::warnAboutOverwriting,
@@ -263,8 +311,13 @@ void SessionManager::saveInteractive()
 
             const auto result = saveToFile (file);
             if (result.failed())
+            {
                 juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
                                                         "Save failed", result.getErrorMessage());
+                return;
+            }
+
+            currentSessionFile = file;   // plain Save overwrites this from now on
         });
 }
 
@@ -324,11 +377,17 @@ void SessionManager::offerAutosaveRecovery()
         juce::ModalCallbackFunction::create ([this] (int result)
         {
             if (result == 1)
+            {
                 loadFromFile (getAutosaveFile(), [] (const juce::String& error)
                 {
                     if (error.isNotEmpty())
                         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
                                                                 "Session restore", error);
                 });
+
+                // A recovered session has no user-chosen file; don't let a
+                // plain Save silently overwrite the autosave slot.
+                currentSessionFile = juce::File();
+            }
         }));
 }

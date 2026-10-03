@@ -38,7 +38,7 @@ public:
         engine->initialise (savedDeviceState.get());
 
         mainWindow = std::make_unique<MainWindow> (
-            "Vster", new MainComponent (*engine, *pluginManager, *windowManager, *session));
+            "Vster", std::make_unique<MainComponent> (*engine, *pluginManager, *windowManager, *session));
 
         session->offerAutosaveRecovery();
     }
@@ -70,18 +70,26 @@ private:
     class MainWindow : public juce::DocumentWindow
     {
     public:
-        MainWindow (const juce::String& name, juce::Component* content)
+        MainWindow (const juce::String& name, std::unique_ptr<MainComponent> content)
             : juce::DocumentWindow (name,
                                     juce::Desktop::getInstance().getDefaultLookAndFeel()
                                         .findColour (juce::ResizableWindow::backgroundColourId),
                                     juce::DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
-            setContentOwned (content, true);
+            // Menu bar first, so resize-to-fit below accounts for its height.
+            setMenuBar (content.get());
+            setContentOwned (content.release(), true);
             setResizable (true, false);
-            setResizeLimits (640, 258, 4096, 2160);
+            setResizeLimits (640, 258 + getMenuBarComponent()->getHeight(), 4096, 2160);
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
+        }
+
+        ~MainWindow() override
+        {
+            // The content is the menu model; detach before it is destroyed.
+            setMenuBar (nullptr);
         }
 
         void closeButtonPressed() override

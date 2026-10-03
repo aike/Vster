@@ -108,18 +108,18 @@ void PluginHostManager::runScanWorker (const juce::StringArray& args)
 }
 
 //==============================================================================
+// Probes an explicit list of plugin files on a background thread, so the same
+// code path serves full, modified-only and by-name scans.
 class PluginHostManager::Scanner : public juce::Thread
 {
 public:
-    Scanner (PluginHostManager& o, std::function<void()> finished)
-        : juce::Thread ("VST3 scan"), owner (o), onFinished (std::move (finished))
+    Scanner (PluginHostManager& o, juce::StringArray files, std::function<void()> finished)
+        : juce::Thread ("VST3 scan"), owner (o),
+          filesToScan (std::move (files)), onFinished (std::move (finished))
     {
         // Blacklist whatever crashed a previous scan before trying again.
         juce::PluginDirectoryScanner::applyBlacklistingsFromDeadMansPedal (owner.knownPlugins,
                                                                            owner.getDeadMansPedalFile());
-        dirScanner = std::make_unique<juce::PluginDirectoryScanner> (
-            owner.knownPlugins, *owner.vst3, owner.vst3->getDefaultLocationsToSearch(),
-            true, owner.getDeadMansPedalFile(), false);
         startThread();
     }
 
@@ -127,11 +127,47 @@ public:
 
     void run() override
     {
-        juce::String name;
-        while (! threadShouldExit() && dirScanner->scanNextFile (true, name))
+        const auto pedal = owner.getDeadMansPedalFile();
+        const int total = filesToScan.size();
+        int scannedSinceSave = 0;
+
+        for (int i = 0; i < total && ! threadShouldExit(); ++i)
         {
-            const juce::ScopedLock sl (nameLock);
-            currentName = name;
+            const auto path = filesToScan[i];
+
+            {
+                const juce::ScopedLock sl (nameLock);
+                currentName = juce::File (path).getFileNameWithoutExtension();
+            }
+
+            // If this file takes the whole host down, the entry left behind
+            // blacklists it at the start of the next scan.
+            pedal.replaceWithText (path);
+
+            juce::OwnedArray<juce::PluginDescription> found;
+            owner.knownPlugins.scanAndAddFile (path, true, found, *owner.vst3);
+
+            pedal.replaceWithText ({});
+
+            progress.store ((float) (i + 1) / (float) total, std::memory_order_relaxed);
+
+            // Timestamp bookkeeping, plus periodic persistence so a crash or
+            // kill during a long scan keeps the progress made so far. Both on
+            // the message thread; the owner outlives the scanner, and once
+            // the message loop has stopped pending callbacks never run.
+            const bool saveNow = ++scannedSinceSave >= savePluginInterval;
+            if (saveNow)
+                scannedSinceSave = 0;
+
+            juce::MessageManager::callAsync ([&o = owner, path, saveNow]
+            {
+                o.recordPluginFileTime (path);
+                if (saveNow)
+                {
+                    o.saveKnownPlugins();
+                    o.savePluginFileTimes();
+                }
+            });
         }
 
         juce::MessageManager::callAsync ([cb = onFinished] { if (cb) cb(); });
@@ -143,12 +179,15 @@ public:
         return currentName;
     }
 
-    float getProgress() const { return dirScanner->getProgress(); }
+    float getProgress() const { return progress.load (std::memory_order_relaxed); }
 
 private:
+    static constexpr int savePluginInterval = 10;
+
     PluginHostManager& owner;
+    juce::StringArray filesToScan;
     std::function<void()> onFinished;
-    std::unique_ptr<juce::PluginDirectoryScanner> dirScanner;
+    std::atomic<float> progress { 0.0f };
     mutable juce::CriticalSection nameLock;
     juce::String currentName;
 };
@@ -229,6 +268,8 @@ PluginHostManager::PluginHostManager (juce::PropertiesFile& s) : settings (s)
 
     if (auto xml = settings.getXmlValue ("knownPlugins"))
         knownPlugins.recreateFromXml (*xml);
+
+    loadPluginFileTimes();
 }
 
 PluginHostManager::~PluginHostManager()
@@ -275,20 +316,140 @@ juce::Array<juce::PluginDescription> PluginHostManager::findTypesInFile (const j
     return result;
 }
 
+juce::StringArray PluginHostManager::getCandidatePluginFiles()
+{
+    return vst3->searchPathsForPlugins (vst3->getDefaultLocationsToSearch(), true, false);
+}
+
 void PluginHostManager::scanDefaultPaths (std::function<void()> onFinished)
 {
     if (scanner != nullptr)
         return;
 
+    auto files = getCandidatePluginFiles();
+
+    // A full scan sees every existing file, so drop timestamp records of
+    // files that have disappeared.
+    for (auto it = pluginFileTimes.begin(); it != pluginFileTimes.end();)
+        it = files.contains (it->first) ? std::next (it) : pluginFileTimes.erase (it);
+
+    startScan (std::move (files), std::move (onFinished));
+}
+
+void PluginHostManager::scanModified (std::function<void()> onFinished)
+{
+    if (scanner != nullptr)
+        return;
+
+    juce::StringArray subset;
+    for (const auto& path : getCandidatePluginFiles())
+    {
+        const auto it = pluginFileTimes.find (path);
+        if (it == pluginFileTimes.end()
+            || juce::File (path).getLastModificationTime().toMilliseconds() > it->second)
+            subset.add (path);
+    }
+
+    if (subset.isEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon,
+                                                "Scan Modified", "No new or modified plugins found.");
+        if (onFinished)
+            onFinished();
+        return;
+    }
+
+    startScan (std::move (subset), std::move (onFinished));
+}
+
+void PluginHostManager::scanByName (const juce::String& nameFragment, std::function<void()> onFinished)
+{
+    if (scanner != nullptr)
+        return;
+
+    const auto needle = nameFragment.trim();
+    if (needle.isEmpty())
+        return;
+
+    juce::StringArray subset;
+    for (const auto& path : getCandidatePluginFiles())
+        if (juce::File (path).getFileNameWithoutExtension().containsIgnoreCase (needle))
+            subset.add (path);
+
+    if (subset.isEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon,
+                                                "Scan by Name",
+                                                "No plugin filenames contain \"" + needle + "\".");
+        if (onFinished)
+            onFinished();
+        return;
+    }
+
+    startScan (std::move (subset), std::move (onFinished));
+}
+
+void PluginHostManager::startScan (juce::StringArray files, std::function<void()> onFinished)
+{
     scanWindow = std::make_unique<ScanWindow> (*this);
-    scanner = std::make_unique<Scanner> (*this, [this, onFinished]
+    scanner = std::make_unique<Scanner> (*this, std::move (files), [this, onFinished]
     {
         saveKnownPlugins();
+        savePluginFileTimes();
         scanWindow.reset();
         scanner.reset();   // run() has already posted this and is returning
         if (onFinished)
             onFinished();
     });
+}
+
+void PluginHostManager::removeFromBlacklist (const juce::String& fileOrIdentifier)
+{
+    knownPlugins.removeFromBlacklist (fileOrIdentifier);
+
+    // The dead-man's-pedal file may still name this plugin; left there it
+    // would be re-blacklisted the moment the next scan starts.
+    const auto pedal = getDeadMansPedalFile();
+    if (pedal.existsAsFile())
+    {
+        juce::StringArray lines;
+        pedal.readLines (lines);
+        lines.removeString (fileOrIdentifier);
+        lines.removeEmptyStrings();
+        pedal.replaceWithText (lines.joinIntoString ("\n"));
+    }
+
+    // Forget its timestamp so the next Scan Modified probes it again.
+    pluginFileTimes.erase (fileOrIdentifier);
+    savePluginFileTimes();
+    saveKnownPlugins();
+}
+
+void PluginHostManager::recordPluginFileTime (const juce::String& path)
+{
+    pluginFileTimes[path] = juce::File (path).getLastModificationTime().toMilliseconds();
+}
+
+void PluginHostManager::loadPluginFileTimes()
+{
+    if (auto xml = settings.getXmlValue ("pluginFileTimes"))
+        for (auto* e : xml->getChildWithTagNameIterator ("FILE"))
+            pluginFileTimes[e->getStringAttribute ("path")] =
+                e->getStringAttribute ("time").getLargeIntValue();
+}
+
+void PluginHostManager::savePluginFileTimes()
+{
+    juce::XmlElement root ("PLUGINFILETIMES");
+    for (const auto& [path, time] : pluginFileTimes)
+    {
+        auto* e = root.createNewChildElement ("FILE");
+        e->setAttribute ("path", path);
+        e->setAttribute ("time", juce::String (time));
+    }
+
+    settings.setValue ("pluginFileTimes", &root);
+    settings.saveIfNeeded();
 }
 
 void PluginHostManager::cancelScan()

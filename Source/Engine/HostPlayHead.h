@@ -69,5 +69,5 @@ private:
     std::atomic<double> ppqPosition { 0.0 };
     std::atomic<double> sampleRate { 44100.0 };
     std::atomic<juce::int64> timeInSamples { 0 };
-    std::atomic<bool> playing { true };
+    std::atomic<bool> playing { false };   // starts stopped; the user starts the clock
 };

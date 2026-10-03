@@ -8,14 +8,22 @@ Play a software instrument instantly, without starting a DAW.
 - Fixed serial chain: **1 VST3 instrument + 3 insert VST3 effects** (Inst → FX1 → FX2 → FX3 → Master)
 - **ASIO** and WASAPI output
 - **Host BPM** — tempo-synced plugins (delays, LFOs, arpeggiators, ...) follow the host
-  play head, with a Play/Stop toggle (Play restarts from bar 1)
-- On-screen keyboard plus **hardware MIDI input**
-- **Session save/load** (`.vster`): slot configuration, full plugin states, BPM, master volume.
+  play head, with a clock Running/Stopped toggle (starts stopped; Running restarts from bar 1)
+- On-screen keyboard plus **hardware MIDI input** — every MIDI device is enabled
+  automatically on launch and on hot-plug, with a MIDI input lamp in the top bar
+- **Session save/load** (`.vster`) from the File menu: New, Load..., Save (overwrites the
+  current session file, `Ctrl+S`) and Save As....
+  Saved: slot configuration, full plugin states, BPM, master volume.
   If a plugin is missing on load, its saved state is preserved and written back on the next save;
   reloading the same plugin restores it automatically
 - Master volume / MUTE (click-free ramp) and a stereo peak meter
-- Crash insurance: autosave every 2 minutes and before each plugin load, with recovery on restart
-- Plugin scanning with an automatic crash blacklist (dead-man's-pedal)
+- Crash insurance: autosave before each plugin load and on exit, with recovery on restart
+- **Plugin Manager** (Option menu) with three scan modes — **Full Scan**, **Scan Modified**
+  (only files that are new or changed since the last scan) and **Scan by Name**
+  (case-insensitive filename match) — plus a blacklist view where a blacklisted plugin
+  can be un-blacklisted. A plugin that crashes or hangs while being scanned is blacklisted
+  automatically (dead-man's-pedal), and during a long scan the plugin list is saved every
+  few plugins, so an interrupted scan keeps its progress
 
 No sequencer, a single track only. MIDI is routed to the instrument slot only
 (vocoder/arpeggiator-style *effect* plugins will stay silent).
@@ -35,10 +43,10 @@ Prebuilt binaries for Windows x64 (with ASIO support) are available on the
 4. Run `Vster.exe`.
    - If Windows SmartScreen shows "Windows protected your PC", click
      **More info** → **Run anyway** (the binary is not code-signed).
-5. Click **Scan Plugins** to find the VST3 plugins installed in the standard folder
-   (`C:\Program Files\Common Files\VST3`). Plugins that crash or hang while
-   being scanned are skipped automatically.
-6. Choose your audio device (ASIO or WASAPI) with **Audio Settings...**.
+5. Open **Option > Plugin Manager...** and click **Full Scan** to find the VST3 plugins
+   installed in the standard folder (`C:\Program Files\Common Files\VST3`). Plugins that
+   crash or hang while being scanned are skipped automatically.
+6. Choose your audio device (ASIO or WASAPI) with **Option > Audio Settings...**.
 
 To update, download the new zip and replace `Vster.exe`. Settings and the plugin
 list are stored separately in `%APPDATA%\Vster`, so they are kept.

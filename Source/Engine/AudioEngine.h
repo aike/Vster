@@ -15,6 +15,19 @@ struct MissingPlugin
     int uniqueId = 0;
 };
 
+// Counts incoming hardware MIDI messages so the UI can show an activity
+// lamp. handleIncomingMidiMessage runs on the system MIDI thread.
+struct MidiActivityMonitor : public juce::MidiInputCallback
+{
+    void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& m) override
+    {
+        if (! m.isActiveSense() && ! m.isMidiClock())
+            count.fetch_add (1, std::memory_order_relaxed);
+    }
+
+    std::atomic<uint32_t> count { 0 };
+};
+
 // Owns the audio device, the chain and everything audible. All plugin
 // lifecycle methods must be called on the message thread.
 class AudioEngine
@@ -54,13 +67,17 @@ public:
     PluginChain chain { playHead };
     juce::MidiKeyboardState keyboardState;
     juce::MidiMessageCollector midiCollector;
+    MidiActivityMonitor midiActivity;
     LevelMeterSource meter;
     std::array<std::unique_ptr<MissingPlugin>, PluginChain::numSlots> missing;
 
 private:
     void updateGain();
+    void enableNewMidiInputs();
 
     EngineCallback callback { chain, playHead, midiCollector, keyboardState, meter };
+    juce::MidiDeviceListConnection midiListConnection;
+    juce::StringArray knownMidiInputs;
     float userGainDb = 0.0f;
     bool muted = false;
     bool initialised = false;

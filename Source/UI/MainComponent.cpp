@@ -29,11 +29,6 @@ MainComponent::MainComponent (AudioEngine& e, PluginHostManager& p, PluginWindow
     volumeSlider.onValueChange = [this] { engine.setMasterGainDb ((float) volumeSlider.getValue()); };
     addAndMakeVisible (volumeSlider);
 
-    muteButton.setClickingTogglesState (true);
-    muteButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::red);
-    muteButton.onClick = [this] { engine.setMuted (muteButton.getToggleState()); };
-    addAndMakeVisible (muteButton);
-
     addAndMakeVisible (meter);
 
     keyboard.setAvailableRange (24, 108);   // C1..C8
@@ -42,12 +37,109 @@ MainComponent::MainComponent (AudioEngine& e, PluginHostManager& p, PluginWindow
 
     session.onSessionChanged = [this] { syncControls(); };
 
+    // Ctrl+S anywhere in the main window triggers Save; the menu bar shows
+    // the shortcut because it watches this command manager.
+    commandManager.registerAllCommandsForTarget (this);
+    addKeyListener (commandManager.getKeyMappings());
+    setWantsKeyboardFocus (true);
+    setApplicationCommandManagerToWatch (&commandManager);
+
     setSize (860, 258);   // 40 transport + 128 slots/master + 90 keyboard
 }
 
 MainComponent::~MainComponent()
 {
     session.onSessionChanged = nullptr;
+}
+
+juce::StringArray MainComponent::getMenuBarNames()
+{
+    return { "File", "Option" };
+}
+
+juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juce::String&)
+{
+    juce::PopupMenu menu;
+
+    if (topLevelMenuIndex == 0)
+    {
+        menu.addItem (menuFileNew,  "New");
+        menu.addItem (menuFileLoad, "Load...");
+        menu.addCommandItem (&commandManager, commandSave);   // "Save  Ctrl+S"
+        menu.addItem (menuFileSaveAs, "Save As...");
+    }
+    else if (topLevelMenuIndex == 1)
+    {
+        menu.addItem (menuOptionAudioSettings, "Audio Settings...");
+        menu.addItem (menuOptionPluginManager, "Plugin Manager...");
+    }
+
+    return menu;
+}
+
+void MainComponent::menuItemSelected (int menuItemID, int)
+{
+    switch (menuItemID)
+    {
+        case menuFileNew:            session.newInteractive(); break;
+        case menuFileLoad:           session.loadInteractive(); break;
+        case menuFileSaveAs:         session.saveAsInteractive(); break;
+        // commandSave arrives via the command manager, not here.
+        case menuOptionAudioSettings: showAudioSettings(); break;
+        case menuOptionPluginManager:
+            if (pluginManagerWindow == nullptr)
+                pluginManagerWindow = std::make_unique<PluginManagerWindow> (plugins);
+            pluginManagerWindow->setVisible (true);
+            pluginManagerWindow->toFront (true);
+            break;
+        default: break;
+    }
+}
+
+void MainComponent::getAllCommands (juce::Array<juce::CommandID>& commands)
+{
+    commands.add (commandSave);
+}
+
+void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& info)
+{
+    if (id == commandSave)
+    {
+        info.setInfo ("Save", "Saves the session to its file", "File", 0);
+        info.addDefaultKeypress ('S', juce::ModifierKeys::commandModifier);
+    }
+}
+
+bool MainComponent::perform (const InvocationInfo& info)
+{
+    if (info.commandID == commandSave)
+    {
+        session.saveInteractive();
+        return true;
+    }
+    return false;
+}
+
+void MainComponent::showAudioSettings()
+{
+    auto selector = std::make_unique<juce::AudioDeviceSelectorComponent> (
+        engine.deviceManager,
+        0, 0,      // no audio inputs
+        2, 2,      // stereo output
+        true,      // MIDI input selection
+        false,     // no MIDI output
+        true,      // channels as stereo pairs
+        false);
+    selector->setSize (520, 480);
+
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned (selector.release());
+    options.dialogTitle = "Audio / MIDI Settings";
+    options.componentToCentreAround = getTopLevelComponent();
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = false;
+    options.launchAsync();
 }
 
 void MainComponent::resized()
@@ -60,8 +152,6 @@ void MainComponent::resized()
 
     auto master = area.removeFromRight (130).reduced (6);
     volumeLabel.setBounds (master.removeFromTop (16));
-    muteButton.setBounds (master.removeFromBottom (26));
-    master.removeFromBottom (4);
     meter.setBounds (master.removeFromRight (36));
     master.removeFromRight (6);
     volumeSlider.setBounds (master);
@@ -121,9 +211,8 @@ void MainComponent::clearSlot (int slot)
 
 void MainComponent::syncControls()
 {
-    transport.syncFromEngine();
+    transport.syncFromEngine();   // also syncs the MUTE toggle
     volumeSlider.setValue (engine.getMasterGainDb(), juce::dontSendNotification);
-    muteButton.setToggleState (engine.isMuted(), juce::dontSendNotification);
     for (auto& slot : slotComponents)
         slot->refresh();
 }

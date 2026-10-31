@@ -1,4 +1,5 @@
 #include "PluginHostManager.h"
+#include <algorithm>
 #include <cstdlib>
 
 #if JUCE_WINDOWS
@@ -144,8 +145,13 @@ public:
             // blacklists it at the start of the next scan.
             pedal.replaceWithText (path);
 
+            // Always re-probe: every caller has already decided this file
+            // needs scanning. With dontRescanIfAlreadyInList the list entry
+            // would be kept whenever the bundle's timestamp looks unchanged,
+            // so an updated plugin's manufacturer/category never refreshed.
             juce::OwnedArray<juce::PluginDescription> found;
-            owner.knownPlugins.scanAndAddFile (path, true, found, *owner.vst3);
+            if (owner.knownPlugins.scanAndAddFile (path, false, found, *owner.vst3))
+                owner.removeStaleTypesForFile (path, found);
 
             pedal.replaceWithText ({});
 
@@ -306,7 +312,8 @@ juce::Array<juce::PluginDescription> PluginHostManager::findTypesInFile (const j
     juce::Array<juce::PluginDescription> result;
 
     juce::OwnedArray<juce::PluginDescription> found;
-    knownPlugins.scanAndAddFile (file.getFullPathName(), true, found, *vst3);
+    if (knownPlugins.scanAndAddFile (file.getFullPathName(), false, found, *vst3))
+        removeStaleTypesForFile (file.getFullPathName(), found);
     for (auto* d : found)
         result.add (*d);
 
@@ -345,8 +352,7 @@ void PluginHostManager::scanModified (std::function<void()> onFinished)
     for (const auto& path : getCandidatePluginFiles())
     {
         const auto it = pluginFileTimes.find (path);
-        if (it == pluginFileTimes.end()
-            || juce::File (path).getLastModificationTime().toMilliseconds() > it->second)
+        if (it == pluginFileTimes.end() || getPluginFileTime (path) > it->second)
             subset.add (path);
     }
 
@@ -425,9 +431,38 @@ void PluginHostManager::removeFromBlacklist (const juce::String& fileOrIdentifie
     saveKnownPlugins();
 }
 
+void PluginHostManager::removeStaleTypesForFile (const juce::String& path,
+                                                 const juce::OwnedArray<juce::PluginDescription>& found)
+{
+    for (const auto& old : knownPlugins.getTypes())
+    {
+        if (old.fileOrIdentifier != path)
+            continue;
+
+        const bool stillPresent = std::any_of (found.begin(), found.end(),
+                                               [&] (const juce::PluginDescription* d) { return d->isDuplicateOf (old); });
+        if (! stillPresent)
+            knownPlugins.removeType (old);
+    }
+}
+
+juce::int64 PluginHostManager::getPluginFileTime (const juce::String& path)
+{
+    const juce::File f (path);
+    auto newest = f.getLastModificationTime().toMilliseconds();
+
+    // A .vst3 bundle is a folder; replacing the binary inside it leaves the
+    // folder's own timestamp untouched, so look at the contents too.
+    if (f.isDirectory())
+        for (const auto& entry : juce::RangedDirectoryIterator (f, true, "*", juce::File::findFiles))
+            newest = juce::jmax (newest, entry.getModificationTime().toMilliseconds());
+
+    return newest;
+}
+
 void PluginHostManager::recordPluginFileTime (const juce::String& path)
 {
-    pluginFileTimes[path] = juce::File (path).getLastModificationTime().toMilliseconds();
+    pluginFileTimes[path] = getPluginFileTime (path);
 }
 
 void PluginHostManager::loadPluginFileTimes()

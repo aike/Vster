@@ -53,8 +53,16 @@ private:
     juce::StringArray getCandidatePluginFiles();
     void startScan (juce::StringArray files, std::function<void()> onFinished);
 
+    // After a file has been re-probed, drops list entries for sub-plugins
+    // the file no longer provides (the ones it still has were replaced by
+    // scanAndAddFile).
+    void removeStaleTypesForFile (const juce::String& path,
+                                  const juce::OwnedArray<juce::PluginDescription>& found);
+
     // Per-file modification times recorded as each file is scanned; this is
-    // what Scan Modified compares against.
+    // what Scan Modified compares against. For a bundle folder this is the
+    // newest time of anything inside it.
+    static juce::int64 getPluginFileTime (const juce::String& path);
     void recordPluginFileTime (const juce::String& path);
     void loadPluginFileTimes();
     void savePluginFileTimes();

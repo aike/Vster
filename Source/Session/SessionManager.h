@@ -23,7 +23,8 @@ public:
 
     void autosaveNow();
     juce::File getAutosaveFile() const;
-    void offerAutosaveRecovery();
+    void offerAutosaveRecovery();   // asks first
+    void restoreAutosave();         // no questions (used after a self-restart)
 
     bool isLoading() const noexcept { return pendingLoads > 0; }
 

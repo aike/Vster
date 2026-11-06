@@ -377,17 +377,23 @@ void SessionManager::offerAutosaveRecovery()
         juce::ModalCallbackFunction::create ([this] (int result)
         {
             if (result == 1)
-            {
-                loadFromFile (getAutosaveFile(), [] (const juce::String& error)
-                {
-                    if (error.isNotEmpty())
-                        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
-                                                                "Session restore", error);
-                });
-
-                // A recovered session has no user-chosen file; don't let a
-                // plain Save silently overwrite the autosave slot.
-                currentSessionFile = juce::File();
-            }
+                restoreAutosave();
         }));
+}
+
+void SessionManager::restoreAutosave()
+{
+    if (! getAutosaveFile().existsAsFile())
+        return;
+
+    loadFromFile (getAutosaveFile(), [] (const juce::String& error)
+    {
+        if (error.isNotEmpty())
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                    "Session restore", error);
+    });
+
+    // A recovered session has no user-chosen file; don't let a plain Save
+    // silently overwrite the autosave slot.
+    currentSessionFile = juce::File();
 }

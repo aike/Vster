@@ -1,4 +1,5 @@
 #include "PluginHostManager.h"
+#include "PluginDpiPolicy.h"
 #include <algorithm>
 #include <cstdlib>
 
@@ -300,6 +301,25 @@ void PluginHostManager::createInstance (const juce::PluginDescription& desc,
                                         double sampleRate, int blockSize,
                                         std::function<void (std::unique_ptr<juce::AudioPluginInstance>, const juce::String&)> callback)
 {
+    // A plugin whose editor is hosted DPI-unaware (see PluginDpiPolicy) is
+    // also instantiated with the thread DPI-unaware: some of them read the
+    // display scale once at construction. The format's own async path can't
+    // be wrapped, so this does the same thing by hand.
+    if (PluginDpiPolicy::shouldHostDpiUnaware (settings, desc))
+    {
+        juce::MessageManager::callAsync ([this, desc, sampleRate, blockSize, cb = std::move (callback)]
+        {
+            juce::String error;
+            std::unique_ptr<juce::AudioPluginInstance> instance;
+            {
+                const juce::ScopedDPIAwarenessDisabler disabler;
+                instance = formatManager.createPluginInstance (desc, sampleRate, blockSize, error);
+            }
+            cb (std::move (instance), error);
+        });
+        return;
+    }
+
     formatManager.createPluginInstanceAsync (desc, sampleRate, blockSize,
         [cb = std::move (callback)] (std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error)
         {

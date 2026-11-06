@@ -36,6 +36,7 @@ MainComponent::MainComponent (AudioEngine& e, PluginHostManager& p, PluginWindow
     addAndMakeVisible (keyboard);
 
     session.onSessionChanged = [this] { syncControls(); };
+    windows.onHostingModeChanged = [this] (int id, bool detected) { offerRestartForPlugin (id, detected); };
 
     // Ctrl+S anywhere in the main window triggers Save; the menu bar shows
     // the shortcut because it watches this command manager.
@@ -49,6 +50,7 @@ MainComponent::MainComponent (AudioEngine& e, PluginHostManager& p, PluginWindow
 
 MainComponent::~MainComponent()
 {
+    windows.onHostingModeChanged = nullptr;
     session.onSessionChanged = nullptr;
 }
 
@@ -163,6 +165,37 @@ void MainComponent::resized()
         slot->setBounds (slotsArea.removeFromTop (26));
         slotsArea.removeFromTop (4);
     }
+}
+
+// The HiDPI hosting mode of a slot's plugin changed (see PluginDpiPolicy):
+// detected automatically because its editor only showed part of its UI, or
+// chosen from the slot menu. A plugin's module reads the display scale once
+// when it is first loaded and stays loaded until the app exits, so the new
+// mode needs a fresh process; re-instantiating the plugin in this one does
+// not help (BIAS FX 2 keeps drawing at the old scale).
+void MainComponent::offerRestartForPlugin (int slot, bool detected)
+{
+    const auto* desc = engine.chain.getDescription (slot);
+    const juce::String name = desc != nullptr ? desc->name : juce::String ("This plugin");
+    const auto app = juce::JUCEApplication::getInstance()->getApplicationName();
+
+    juce::String text;
+    if (detected)
+        text << name << " ignores HiDPI scaling, so its window only shows part of its UI. "
+             << app << " will host it scaled by Windows instead (remembered in the settings).\n\n";
+    else
+        text << "The editor window scaling of " << name << " was changed.\n\n";
+
+    text << "The change takes effect when the plugin is loaded in a fresh process. "
+         << "Restart " << app << " now? The current session is saved and restored automatically.";
+
+    juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon,
+        "Restart " + app + "?", text, "Restart now", "Later", nullptr,
+        juce::ModalCallbackFunction::create ([this] (int result)
+        {
+            if (result == 1 && onRestartRequested && ! session.isLoading())
+                onRestartRequested();
+        }));
 }
 
 void MainComponent::loadPluginIntoSlot (int slot, const juce::PluginDescription& desc)

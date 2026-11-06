@@ -60,6 +60,22 @@ void SlotComponent::showMenu()
         menu.addSeparator();
     }
 
+   #if JUCE_WINDOWS
+    // HiDPI handling of this plugin's editor window (see PluginDpiPolicy).
+    // Automatic normally gets it right; the explicit choices are the escape
+    // hatch when a plugin is cut off or shown blurry.
+    if (auto* desc = engine.chain.getDescription (slot))
+    {
+        const auto current = windows.getEditorScaling (*desc);
+        juce::PopupMenu scaling;
+        scaling.addItem (4, "Automatic (switch if the UI is cut off)", true, current == EditorScaling::automatic);
+        scaling.addItem (5, "Native HiDPI (plugin scales itself)", true, current == EditorScaling::native);
+        scaling.addItem (6, "Scaled by Windows (for plugins that ignore HiDPI)", true, current == EditorScaling::bitmap);
+        menu.addSubMenu ("Editor window scaling", scaling);
+        menu.addSeparator();
+    }
+   #endif
+
     juce::Array<juce::PluginDescription> filtered;
     for (const auto& d : plugins.knownPlugins.getTypes())
         if (d.isInstrument == isInstrumentSlot())
@@ -86,6 +102,16 @@ void SlotComponent::showMenu()
             if (result == 0)
                 return;
             if (result == 1) { if (onClearRequested) onClearRequested (slot); return; }
+
+            if (result >= 4 && result <= 6)
+            {
+                const auto mode = result == 4 ? EditorScaling::automatic
+                                : result == 5 ? EditorScaling::native
+                                              : EditorScaling::bitmap;
+                if (auto* instance = engine.chain.getInstance (slot))
+                    windows.setEditorScaling (slot, *instance, mode);
+                return;
+            }
 
             const int index = juce::KnownPluginList::getIndexChosenByMenu (filtered, result);
             if (index >= 0 && onLoadRequested)

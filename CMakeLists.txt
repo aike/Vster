@@ -55,6 +55,7 @@ target_sources(Vster PRIVATE
     Source/Engine/PluginChain.cpp
     Source/Plugins/PluginHostManager.cpp
     Source/Plugins/PluginWindowManager.cpp
+    Source/Plugins/PluginDpiPolicy.cpp
     Source/Session/SessionManager.cpp
     Source/UI/MainComponent.cpp
     Source/UI/PluginManagerWindow.cpp
